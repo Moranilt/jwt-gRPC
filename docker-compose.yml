@@ -1,0 +1,78 @@
+services:
+  redis:
+      image: redis
+      ports:
+        - "6379:6379"
+      environment:
+        REDIS_PASSWORD: 1234
+
+  consul:
+    image: consul
+    ports:
+      - "8300:8300"
+      - "8500:8500"
+    volumes:
+      - ./init/consul:/consul/config
+    networks:
+      - consul_init
+  
+  consul_init:
+    image: consul
+    restart: on-failure
+    entrypoint: >
+     sh -c "consul kv put -http-addr=http://consul:8500 auth/v1.0.0/config.yaml @/configs/config.yaml"
+    volumes:
+      - ./config.yaml:/configs/config.yaml
+    depends_on:
+      - consul
+    networks:
+      - consul_init
+  
+  jaeger:
+    container_name: jaeger
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+      - "14268:14268"
+  
+  vault:
+    image: vault
+    ports:
+      - "8200:8200"
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=myroot
+      - VAULT_TOKEN=myroot
+      - VAULT_API_ADDR=http://localhost:8200
+      - VAULT_ADDR=http://localhost:8200
+    networks:
+      - vault_init
+
+  vault_init:
+    image: vault
+    depends_on:
+      - vault
+    restart: on-failure
+    environment:
+      - VAULT_TOKEN=myroot
+      - VAULT_API_ADDR=http://vault:8200
+      - VAULT_ADDR=http://vault:8200
+    volumes:
+      - ./init/vault/auth-policy.hcl:/policies/auth-policy.hcl:ro
+      - ./init/vault/redis_config.json:/tmp/redis_config.json:ro
+    command: >
+     sh -c "vault secrets enable -path=authentication -version=2 kv &&
+      vault policy write auth-policy /policies/auth-policy.hcl &&
+      vault token create -policy=auth-policy -id auth-token &&
+      vault kv put -mount=authentication redis @/tmp/redis_config.json"
+    networks:
+      - vault_init
+
+networks:
+  consul_init:
+    driver: bridge
+  vault_init:
+    driver: bridge

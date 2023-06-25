@@ -1,0 +1,16 @@
+syntax = "proto3";
+option go_package = "github.com/Motanilt/jwt-http2";
+
+message CreateTokensRequest {
+  string UserId = 1;
+  map<string, string> UserClaims = 2;
+}
+
+message CreateTokensResponse {
+  string AccessToken = 1;
+  string RefreshToken = 2;
+}
+
+service Authentication {
+  rpc CreateTokens(CreateTokensRequest) returns (CreateTokensResponse);
+}
