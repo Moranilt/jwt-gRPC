@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "github.com/Motanilt/jwt-http2";
+option go_package = "github.com/Moranilt/jwt-http2";
 
 message CreateTokensRequest {
   string UserId = 1;
