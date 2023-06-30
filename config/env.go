@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	PORT       = "PORT"
+	PORT_GRPC  = "PORT_GRPC"
+	PORT_REST  = "PORT_REST"
 	PRODUCTION = "PRODUCTION"
 
 	CONSUL_HOST        = "CONSUL_HOST"
@@ -59,13 +60,15 @@ type Env struct {
 	Vault      *VaultEnv
 	Consul     *ConsulEnv
 	Jaeger     *JaegerEnv
-	Port       string
+	PortGRPC   string
+	PortREST   string
 	Production bool
 }
 
 func ReadEnv() (*Env, error) {
 	keys := []string{
-		PORT,
+		PORT_GRPC,
+		PORT_REST,
 		PRODUCTION,
 		CONSUL_HOST,
 		CONSUL_TOKEN,
@@ -119,7 +122,8 @@ func ReadEnv() (*Env, error) {
 		Vault:      vault,
 		Consul:     consul,
 		Jaeger:     jaeger,
-		Port:       result[PORT],
+		PortGRPC:   result[PORT_GRPC],
+		PortREST:   result[PORT_REST],
 		Production: production,
 	}, nil
 }

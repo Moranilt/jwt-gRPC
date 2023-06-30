@@ -3,29 +3,31 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	jwt_http2 "github.com/Moranilt/jwt-http2/auth"
 	"github.com/Moranilt/jwt-http2/certs"
 	"github.com/Moranilt/jwt-http2/clients"
 	"github.com/Moranilt/jwt-http2/config"
 	"github.com/Moranilt/jwt-http2/logger"
 	"github.com/Moranilt/jwt-http2/middleware"
 	"github.com/Moranilt/jwt-http2/server"
+	grpc_transport "github.com/Moranilt/jwt-http2/transport/grpc"
+	http_transport "github.com/Moranilt/jwt-http2/transport/http"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
 	log := logger.New()
 	log.Info("starting application...")
 	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		exit := make(chan os.Signal, 1)
+		signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
+		<-exit
+		cancel()
+	}()
 
 	env, err := config.ReadEnv()
 	if err != nil {
@@ -66,38 +68,41 @@ func main() {
 		log.Fatalf("redis client: %v", err)
 	}
 
-	mw := middleware.New(log)
-	service := server.New(log, redis, publicCert, privateCert)
-
-	server := grpc.NewServer(grpc.ConnectionTimeout(10*time.Second), grpc.UnaryInterceptor(mw.UnaryInterceptor))
-	jwt_http2.RegisterAuthenticationServer(server, service)
-	grpc_health_v1.RegisterHealthServer(server, health.NewServer())
-
-	go func() {
-		exit := make(chan os.Signal, 1)
-		signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
-		<-exit
-		cancel()
-	}()
-
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", env.Port))
+	consulClient, err := clients.Consul(ctx, env.Consul)
 	if err != nil {
-		log.Fatal("failed to listen: ", err)
+		log.Fatalf("consul client: %v", err)
 	}
 
-	// TODO: make watch endpoint
-	// router := mux.NewRouter()
-	// router.HandleFunc("/watch", )
+	mainConfig := config.New(log)
+	err = mainConfig.ReadConsul(ctx, env.Consul.Key(), consulClient)
+	if err != nil {
+		log.Fatal("read from consul: ", err)
+	}
+
+	serverREST := http_transport.New(fmt.Sprintf(":%s", env.PortREST), log, mainConfig, env.Consul.Key())
+	mw := middleware.New(log)
+	server := server.New(log, mainConfig.App, redis, publicCert, privateCert)
+	serverGRPC := grpc_transport.New(server, mw)
+	lis, err := serverGRPC.MakeListener(env.PortGRPC)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		<-gCtx.Done()
-		server.GracefulStop()
+		serverGRPC.GracefulStop()
 		lis.Close()
+		serverREST.Shutdown(context.Background())
 		return fmt.Errorf("shutdown application")
 	})
+
 	g.Go(func() error {
-		return server.Serve(lis)
+		return serverGRPC.Serve(lis)
+	})
+
+	g.Go(func() error {
+		return serverREST.ListenAndServe()
 	})
 
 	if err := g.Wait(); err != nil {
