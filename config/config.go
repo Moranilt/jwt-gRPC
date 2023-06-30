@@ -1,125 +1,130 @@
 package config
 
 import (
+	"context"
+	"encoding/base64"
 	"fmt"
-	"os"
-	"strings"
+	"sync"
+	"time"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/Moranilt/jwt-http2/logger"
+	"github.com/Moranilt/jwt-http2/utils"
+	capi "github.com/hashicorp/consul/api"
+	"gopkg.in/yaml.v2"
 )
 
-const (
-	PORT       = "PORT"
-	PRODUCTION = "PRODUCTION"
-
-	CONSUL_HOST        = "CONSUL_HOST"
-	CONSUL_TOKEN       = "CONSUL_TOKEN"
-	CONSUL_KEY_FOLDER  = "CONSUL_KEY_FOLDER"
-	CONSUL_KEY_VERSION = "CONSUL_KEY_VERSION"
-	CONSUL_KEY_FILE    = "CONSUL_KEY_FILE"
-
-	TRACER_URL  = "TRACER_URL"
-	TRACER_NAME = "TRACER_NAME"
-
-	VAULT_MOUNT_PATH        = "VAULT_MOUNT_PATH"
-	VAULT_PUBLIC_CERT_PATH  = "VAULT_PUBLIC_CERT_PATH"
-	VAULT_PRIVATE_CERT_PATH = "VAULT_PRIVATE_CERT_PATH"
-	VAULT_REDIS_CREDS_PATH  = "VAULT_REDIS_CREDS_PATH"
-	VAULT_TOKEN             = "VAULT_TOKEN"
-	VAULT_HOST              = "VAULT_HOST"
-)
-
-type VaultEnv struct {
-	MountPath       string `mapstructure:"VAULT_MOUNT_PATH"`
-	PublicCertPath  string `mapstructure:"VAULT_PUBLIC_CERT_PATH"`
-	PrivateCertPath string `mapstructure:"VAULT_PRIVATE_CERT_PATH"`
-	RedisCredsPath  string `mapstructure:"VAULT_REDIS_CREDS_PATH"`
-	Token           string `mapstructure:"VAULT_TOKEN"`
-	Host            string `mapstructure:"VAULT_HOST"`
+type TokenTime interface {
+	time.Duration | string
+}
+type Config struct {
+	App    *AppConfig[time.Duration]
+	base64 string
+	mu     sync.RWMutex
 }
 
-type ConsulEnv struct {
-	Host       string `mapstructure:"CONSUL_HOST"`
-	Token      string `mapstructure:"CONSUL_TOKEN"`
-	KeyFolder  string `mapstructure:"CONSUL_KEY_FOLDER"`
-	KeyVersion string `mapstructure:"CONSUL_KEY_VERSION"`
-	KeyFile    string `mapstructure:"CONSUL_KEY_FILE"`
+type AppConfig[T TokenTime] struct {
+	Issuer   string   `yaml:"issuer"`
+	Subject  string   `yaml:"subject"`
+	Audience []string `yaml:"audience"`
+	TTL      *TTL[T]  `yaml:"ttl"`
 }
 
-func (c *ConsulEnv) Key() string {
-	return strings.Join([]string{c.KeyFolder, c.KeyVersion, c.KeyFile}, "/")
+type TTL[T TokenTime] struct {
+	Access  T `yaml:"access"`
+	Refresh T `yaml:"refresh"`
 }
 
-type JaegerEnv struct {
-	URL  string `mapstructure:"TRACER_URL"`
-	Name string `mapstructure:"TRACER_NAME"`
+type WatchConsulBody struct {
+	Key         string
+	CreateIndex int
+	Flags       int
+	Value       string
 }
 
-type Env struct {
-	Vault      *VaultEnv
-	Consul     *ConsulEnv
-	Jaeger     *JaegerEnv
-	Port       string
-	Production bool
+func New(log *logger.Logger) *Config {
+	return &Config{}
 }
 
-func ReadEnv() (*Env, error) {
-	keys := []string{
-		PORT,
-		PRODUCTION,
-		CONSUL_HOST,
-		CONSUL_TOKEN,
-		CONSUL_KEY_FOLDER,
-		CONSUL_KEY_VERSION,
-		CONSUL_KEY_FILE,
-		TRACER_URL,
-		TRACER_NAME,
-		VAULT_MOUNT_PATH,
-		VAULT_PUBLIC_CERT_PATH,
-		VAULT_PRIVATE_CERT_PATH,
-		VAULT_REDIS_CREDS_PATH,
-		VAULT_TOKEN,
-		VAULT_HOST,
+func (c *Config) ReadConsul(ctx context.Context, env *ConsulEnv, cc *capi.Client) error {
+	kv := cc.KV()
+	pair, _, err := kv.Get(env.Key(), nil)
+	if err != nil {
+		return err
 	}
 
-	result := make(map[string]string, len(keys))
+	if pair == nil {
+		return fmt.Errorf("empty data in consul %q", env.Key())
+	}
 
-	for _, key := range keys {
-		if val, err := os.LookupEnv(key); !err {
-			return nil, fmt.Errorf("env %q is not provided", key)
-		} else {
-			result[key] = val
+	err = c.setNewConfig(pair.Value)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) WatchConsul(ctx context.Context, env *ConsulEnv, newConfigs []WatchConsulBody) error {
+	var consulConfig *WatchConsulBody
+	for _, nc := range newConfigs {
+		if nc.Key == env.Key() {
+			consulConfig = &nc
+			break
 		}
 	}
+	if consulConfig == nil {
+		return nil
+	}
 
-	var consul *ConsulEnv
-	err := mapstructure.Decode(result, &consul)
+	c.mu.Lock()
+	if consulConfig.Value == c.base64 {
+		return nil
+	} else {
+		c.base64 = consulConfig.Value
+	}
+
+	base64Decoded, err := base64.StdEncoding.DecodeString(consulConfig.Value)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	c.mu.Unlock()
 
-	var vault *VaultEnv
-	err = mapstructure.Decode(result, &vault)
+	err = c.setNewConfig(base64Decoded)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var jaeger *JaegerEnv
-	err = mapstructure.Decode(result, &jaeger)
+	return nil
+}
+
+func (c *Config) setNewConfig(newValue []byte) error {
+	var newConfig *AppConfig[string]
+	err := yaml.Unmarshal(newValue, &newConfig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var production bool
-	if result[PRODUCTION] == "true" {
-		production = true
+	access, err := utils.MakeTimeFromString(newConfig.TTL.Access)
+	if err != nil {
+		return fmt.Errorf("access TTL: %w", err)
 	}
 
-	return &Env{
-		Vault:      vault,
-		Consul:     consul,
-		Jaeger:     jaeger,
-		Port:       result[PORT],
-		Production: production,
-	}, nil
+	refresh, err := utils.MakeTimeFromString(newConfig.TTL.Refresh)
+	if err != nil {
+		return fmt.Errorf("refresh TTL: %w", err)
+	}
+
+	c.mu.Lock()
+	c.App = &AppConfig[time.Duration]{
+		Issuer:   newConfig.Issuer,
+		Subject:  newConfig.Subject,
+		Audience: newConfig.Audience,
+		TTL: &TTL[time.Duration]{
+			Access:  access,
+			Refresh: refresh,
+		},
+	}
+	c.mu.Unlock()
+
+	return nil
 }
