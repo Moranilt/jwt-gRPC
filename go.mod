@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/google/uuid v1.3.0
+	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/consul/api v1.20.0
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/mitchellh/mapstructure v1.5.0

@@ -20,6 +20,7 @@ type Config struct {
 	App    *AppConfig[time.Duration]
 	base64 string
 	mu     sync.RWMutex
+	log    *logger.Logger
 }
 
 type AppConfig[T TokenTime] struct {
@@ -42,18 +43,20 @@ type WatchConsulBody struct {
 }
 
 func New(log *logger.Logger) *Config {
-	return &Config{}
+	return &Config{
+		log: log,
+	}
 }
 
-func (c *Config) ReadConsul(ctx context.Context, env *ConsulEnv, cc *capi.Client) error {
+func (c *Config) ReadConsul(ctx context.Context, consulKey string, cc *capi.Client) error {
 	kv := cc.KV()
-	pair, _, err := kv.Get(env.Key(), nil)
+	pair, _, err := kv.Get(consulKey, nil)
 	if err != nil {
 		return err
 	}
 
 	if pair == nil {
-		return fmt.Errorf("empty data in consul %q", env.Key())
+		return fmt.Errorf("empty data in consul %q", consulKey)
 	}
 
 	err = c.setNewConfig(pair.Value)
@@ -64,10 +67,10 @@ func (c *Config) ReadConsul(ctx context.Context, env *ConsulEnv, cc *capi.Client
 	return nil
 }
 
-func (c *Config) WatchConsul(ctx context.Context, env *ConsulEnv, newConfigs []WatchConsulBody) error {
+func (c *Config) WatchConsul(ctx context.Context, consulKey string, newConfigs []WatchConsulBody) error {
 	var consulConfig *WatchConsulBody
 	for _, nc := range newConfigs {
-		if nc.Key == env.Key() {
+		if nc.Key == consulKey {
 			consulConfig = &nc
 			break
 		}
@@ -93,6 +96,8 @@ func (c *Config) WatchConsul(ctx context.Context, env *ConsulEnv, newConfigs []W
 	if err != nil {
 		return err
 	}
+
+	c.log.Infof("New settings: %#v", c.App)
 
 	return nil
 }

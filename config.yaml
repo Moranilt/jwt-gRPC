@@ -1,9 +1,8 @@
-jwt:
-  issuer: authentication
-  subject: user
-  audience:
-    - http://localhost:8080
-    - http://localhost:8000
-  ttl:
-    access: 15m
-    refresh: 7d
+issuer: authentication
+subject: user
+audience:
+  - http://localhost:8080
+  - http://localhost:8000
+ttl:
+  access: 15m
+  refresh: 7d
