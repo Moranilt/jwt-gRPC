@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Moranilt/jwt-http2/config"
+	capi "github.com/hashicorp/consul/api"
 	vault "github.com/hashicorp/vault/api"
 	"github.com/mitchellh/mapstructure"
 	"github.com/redis/go-redis/v9"
@@ -108,4 +109,16 @@ func Redis(ctx context.Context, creds *RedisCreds) (*redis.Client, error) {
 
 	return redisClient, nil
 
+}
+
+func Consul(ctx context.Context, env *config.ConsulEnv) (*capi.Client, error) {
+	client, err := capi.NewClient(&capi.Config{
+		Token:   env.Token,
+		Address: env.Host,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
