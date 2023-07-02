@@ -20,6 +20,7 @@ const (
 	ERROR_MakeAccessToken      = "make access token: %v"
 	ERROR_MakeRefreshToken     = "make refresh token: %v"
 	ERROR_RefreshTokenNotFound = "refresh token not found"
+	ERROR_TokenNotFound        = "token not found"
 )
 
 type Server struct {
@@ -121,6 +122,33 @@ func (s *Server) RefreshTokens(ctx context.Context, req *jwt_http2.RefreshTokens
 	return &jwt_http2.RefreshTokenResponse{
 		AccessToken:  newTokens.AccessToken,
 		RefreshToken: newTokens.RefreshToken,
+	}, nil
+}
+
+func (s *Server) GetUserId(ctx context.Context, req *jwt_http2.GetUserIdRequest) (*jwt_http2.GetUserIdResponse, error) {
+	log := s.log.WithRequestInfo(ctx)
+	log.WithFields(logrus.Fields{
+		"req": req,
+	}).Info()
+
+	claims, err := s.parseAccessToken(ctx, req.AccessToken)
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+
+	userId, err := s.redis.Get(ctx, claims.UUID).Result()
+	if err != nil {
+		if err == redis.Nil {
+			log.Error(ERROR_TokenNotFound)
+			return nil, errors.New(ERROR_TokenNotFound)
+		}
+		log.Error("redis: ", err)
+		return nil, err
+	}
+
+	return &jwt_http2.GetUserIdResponse{
+		UserId: userId,
 	}, nil
 }
 
