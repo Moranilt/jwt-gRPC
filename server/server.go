@@ -21,6 +21,7 @@ const (
 	ERROR_MakeRefreshToken     = "make refresh token: %v"
 	ERROR_RefreshTokenNotFound = "refresh token not found"
 	ERROR_TokenNotFound        = "token not found"
+	ERROR_ProvideAnyField      = "provide any field"
 )
 
 type Server struct {
@@ -150,6 +151,56 @@ func (s *Server) GetUserId(ctx context.Context, req *jwt_http2.GetUserIdRequest)
 	return &jwt_http2.GetUserIdResponse{
 		UserId: userId,
 	}, nil
+}
+
+func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_http2.CheckTokenExistenceRequest) (*jwt_http2.CheckTokenExistenceResponse, error) {
+	log := s.log.WithRequestInfo(ctx)
+	log.WithFields(logrus.Fields{
+		"req": req,
+	}).Info()
+
+	if req.GetAccessToken() == "" && req.GetRefreshToken() == "" {
+		log.Error(ERROR_ProvideAnyField)
+		return nil, fmt.Errorf(ERROR_ProvideAnyField)
+	}
+
+	response := new(jwt_http2.CheckTokenExistenceResponse)
+
+	if req.GetAccessToken() != "" {
+		claims, err := s.parseAccessToken(ctx, req.GetAccessToken())
+		if err != nil {
+			log.Error(err)
+			return nil, err
+		}
+
+		result, err := s.redis.Exists(ctx, claims.UUID).Result()
+		if err != nil {
+			log.Error(err)
+			return nil, err
+		}
+
+		access := result == 1
+		response.AccessToken = &access
+	}
+
+	if req.GetRefreshToken() != "" {
+		claims, err := s.parseRefreshToken(ctx, req.GetRefreshToken())
+		if err != nil {
+			log.Error(err)
+			return nil, err
+		}
+
+		result, err := s.redis.Exists(ctx, claims.RefreshUUID).Result()
+		if err != nil {
+			log.Error(err)
+			return nil, err
+		}
+
+		refresh := result == 1
+		response.RefreshToken = &refresh
+	}
+
+	return response, nil
 }
 
 func (s *Server) makeAccessToken(ctx context.Context, uuid string, uc UserClaims, exp time.Time) (string, error) {

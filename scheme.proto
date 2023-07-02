@@ -28,8 +28,19 @@ message GetUserIdResponse {
   string UserId = 1;
 }
 
+message CheckTokenExistenceRequest {
+  optional string AccessToken = 1;
+  optional string RefreshToken = 2;
+}
+
+message CheckTokenExistenceResponse {
+  optional bool AccessToken = 1;
+  optional bool RefreshToken = 2;
+}
+
 service Authentication {
   rpc CreateTokens(CreateTokensRequest) returns (CreateTokensResponse);
   rpc RefreshTokens(RefreshTokensRequest) returns (RefreshTokenResponse);
   rpc GetUserId(GetUserIdRequest) returns (GetUserIdResponse);
+  rpc CheckTokenExistence(CheckTokenExistenceRequest) returns (CheckTokenExistenceResponse);
 }
