@@ -4,7 +4,7 @@
 // - protoc             v3.21.9
 // source: scheme.proto
 
-package jwt_http2
+package jwt_gRPC
 
 import (
 	context "context"
@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AuthenticationClient interface {
 	CreateTokens(ctx context.Context, in *CreateTokensRequest, opts ...grpc.CallOption) (*CreateTokensResponse, error)
+	RefreshTokens(ctx context.Context, in *RefreshTokensRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error)
 }
 
 type authenticationClient struct {
@@ -42,11 +43,21 @@ func (c *authenticationClient) CreateTokens(ctx context.Context, in *CreateToken
 	return out, nil
 }
 
+func (c *authenticationClient) RefreshTokens(ctx context.Context, in *RefreshTokensRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error) {
+	out := new(RefreshTokenResponse)
+	err := c.cc.Invoke(ctx, "/Authentication/RefreshTokens", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthenticationServer is the server API for Authentication service.
 // All implementations must embed UnimplementedAuthenticationServer
 // for forward compatibility
 type AuthenticationServer interface {
 	CreateTokens(context.Context, *CreateTokensRequest) (*CreateTokensResponse, error)
+	RefreshTokens(context.Context, *RefreshTokensRequest) (*RefreshTokenResponse, error)
 	mustEmbedUnimplementedAuthenticationServer()
 }
 
@@ -56,6 +67,9 @@ type UnimplementedAuthenticationServer struct {
 
 func (UnimplementedAuthenticationServer) CreateTokens(context.Context, *CreateTokensRequest) (*CreateTokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateTokens not implemented")
+}
+func (UnimplementedAuthenticationServer) RefreshTokens(context.Context, *RefreshTokensRequest) (*RefreshTokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RefreshTokens not implemented")
 }
 func (UnimplementedAuthenticationServer) mustEmbedUnimplementedAuthenticationServer() {}
 
@@ -88,6 +102,24 @@ func _Authentication_CreateTokens_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Authentication_RefreshTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshTokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthenticationServer).RefreshTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Authentication/RefreshTokens",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthenticationServer).RefreshTokens(ctx, req.(*RefreshTokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Authentication_ServiceDesc is the grpc.ServiceDesc for Authentication service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -98,6 +130,10 @@ var Authentication_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateTokens",
 			Handler:    _Authentication_CreateTokens_Handler,
+		},
+		{
+			MethodName: "RefreshTokens",
+			Handler:    _Authentication_RefreshTokens_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

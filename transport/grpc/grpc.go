@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 )
 
 type Transport struct {
@@ -23,6 +24,7 @@ func New(service *service.Server, mw *middleware.Middleware) *Transport {
 	}
 	jwt_gRPC.RegisterAuthenticationServer(server, service)
 	grpc_health_v1.RegisterHealthServer(server, health.NewServer())
+	reflection.Register(server.Server)
 
 	return server
 }
