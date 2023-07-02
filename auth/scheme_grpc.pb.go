@@ -26,6 +26,7 @@ type AuthenticationClient interface {
 	RefreshTokens(ctx context.Context, in *RefreshTokensRequest, opts ...grpc.CallOption) (*RefreshTokenResponse, error)
 	GetUserId(ctx context.Context, in *GetUserIdRequest, opts ...grpc.CallOption) (*GetUserIdResponse, error)
 	CheckTokenExistence(ctx context.Context, in *CheckTokenExistenceRequest, opts ...grpc.CallOption) (*CheckTokenExistenceResponse, error)
+	RevokeTokens(ctx context.Context, in *RevokeTokensRequest, opts ...grpc.CallOption) (*RevokeTokensResponse, error)
 }
 
 type authenticationClient struct {
@@ -72,6 +73,15 @@ func (c *authenticationClient) CheckTokenExistence(ctx context.Context, in *Chec
 	return out, nil
 }
 
+func (c *authenticationClient) RevokeTokens(ctx context.Context, in *RevokeTokensRequest, opts ...grpc.CallOption) (*RevokeTokensResponse, error) {
+	out := new(RevokeTokensResponse)
+	err := c.cc.Invoke(ctx, "/Authentication/RevokeTokens", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthenticationServer is the server API for Authentication service.
 // All implementations must embed UnimplementedAuthenticationServer
 // for forward compatibility
@@ -80,6 +90,7 @@ type AuthenticationServer interface {
 	RefreshTokens(context.Context, *RefreshTokensRequest) (*RefreshTokenResponse, error)
 	GetUserId(context.Context, *GetUserIdRequest) (*GetUserIdResponse, error)
 	CheckTokenExistence(context.Context, *CheckTokenExistenceRequest) (*CheckTokenExistenceResponse, error)
+	RevokeTokens(context.Context, *RevokeTokensRequest) (*RevokeTokensResponse, error)
 	mustEmbedUnimplementedAuthenticationServer()
 }
 
@@ -98,6 +109,9 @@ func (UnimplementedAuthenticationServer) GetUserId(context.Context, *GetUserIdRe
 }
 func (UnimplementedAuthenticationServer) CheckTokenExistence(context.Context, *CheckTokenExistenceRequest) (*CheckTokenExistenceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckTokenExistence not implemented")
+}
+func (UnimplementedAuthenticationServer) RevokeTokens(context.Context, *RevokeTokensRequest) (*RevokeTokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RevokeTokens not implemented")
 }
 func (UnimplementedAuthenticationServer) mustEmbedUnimplementedAuthenticationServer() {}
 
@@ -184,6 +198,24 @@ func _Authentication_CheckTokenExistence_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Authentication_RevokeTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeTokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthenticationServer).RevokeTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Authentication/RevokeTokens",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthenticationServer).RevokeTokens(ctx, req.(*RevokeTokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Authentication_ServiceDesc is the grpc.ServiceDesc for Authentication service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -206,6 +238,10 @@ var Authentication_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckTokenExistence",
 			Handler:    _Authentication_CheckTokenExistence_Handler,
+		},
+		{
+			MethodName: "RevokeTokens",
+			Handler:    _Authentication_RevokeTokens_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

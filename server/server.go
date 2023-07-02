@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	ERROR_StoreTokenToRedis    = "cannot store token to redis: %v"
-	ERROR_MakeAccessToken      = "make access token: %v"
-	ERROR_MakeRefreshToken     = "make refresh token: %v"
-	ERROR_RefreshTokenNotFound = "refresh token not found"
-	ERROR_TokenNotFound        = "token not found"
-	ERROR_ProvideAnyField      = "provide any field"
+	ERROR_StoreTokenToRedis          = "cannot store token to redis: %v"
+	ERROR_MakeAccessToken            = "make access token: %v"
+	ERROR_MakeRefreshToken           = "make refresh token: %v"
+	ERROR_RefreshTokenNotFound       = "refresh token not found"
+	ERROR_TokenNotFound              = "token not found"
+	ERROR_ProvideAnyField            = "provide any field"
+	ERROR_CannotDeleteTokenFromRedis = "cannot delete token from redis. Error: %v"
 )
 
 type Server struct {
@@ -201,6 +202,35 @@ func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_http2.CheckTo
 	}
 
 	return response, nil
+}
+
+func (s *Server) RevokeTokens(ctx context.Context, req *jwt_http2.RevokeTokensRequest) (*jwt_http2.RevokeTokensResponse, error) {
+	log := s.log.WithRequestInfo(ctx)
+	log.WithFields(logrus.Fields{
+		"req": req,
+	}).Info()
+
+	claims, err := s.parseRefreshToken(ctx, req.RefreshToken)
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+
+	err = s.redis.Del(ctx, claims.RefreshUUID).Err()
+	if err != nil {
+		log.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
+		return nil, fmt.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
+	}
+
+	err = s.redis.Del(ctx, claims.AccessUUID).Err()
+	if err != nil {
+		log.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
+		return nil, fmt.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
+	}
+
+	return &jwt_http2.RevokeTokensResponse{
+		Revoked: true,
+	}, nil
 }
 
 func (s *Server) makeAccessToken(ctx context.Context, uuid string, uc UserClaims, exp time.Time) (string, error) {
