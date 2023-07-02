@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	jwt_http2 "github.com/Moranilt/jwt-http2/auth"
+	jwt_gRPC "github.com/Moranilt/jwt-http2/auth"
 	"github.com/Moranilt/jwt-http2/config"
 	"github.com/Moranilt/jwt-http2/logger"
 	"github.com/golang-jwt/jwt/v5"
@@ -26,7 +26,7 @@ const (
 )
 
 type Server struct {
-	jwt_http2.UnimplementedAuthenticationServer
+	jwt_gRPC.UnimplementedAuthenticationServer
 	log         *logger.Logger
 	config      *config.AppConfig[time.Duration]
 	redis       *redis.Client
@@ -69,7 +69,7 @@ func New(
 	}
 }
 
-func (s *Server) CreateTokens(ctx context.Context, req *jwt_http2.CreateTokensRequest) (*jwt_http2.CreateTokensResponse, error) {
+func (s *Server) CreateTokens(ctx context.Context, req *jwt_gRPC.CreateTokensRequest) (*jwt_gRPC.CreateTokensResponse, error) {
 	log := s.log.WithRequestInfo(ctx)
 	log.WithFields(logrus.Fields{
 		"req": req,
@@ -81,13 +81,13 @@ func (s *Server) CreateTokens(ctx context.Context, req *jwt_http2.CreateTokensRe
 		return nil, err
 	}
 
-	return &jwt_http2.CreateTokensResponse{
+	return &jwt_gRPC.CreateTokensResponse{
 		AccessToken:  tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
 	}, nil
 }
 
-func (s *Server) RefreshTokens(ctx context.Context, req *jwt_http2.RefreshTokensRequest) (*jwt_http2.RefreshTokenResponse, error) {
+func (s *Server) RefreshTokens(ctx context.Context, req *jwt_gRPC.RefreshTokensRequest) (*jwt_gRPC.RefreshTokenResponse, error) {
 	log := s.log.WithRequestInfo(ctx)
 	log.WithFields(logrus.Fields{
 		"req": req,
@@ -121,13 +121,13 @@ func (s *Server) RefreshTokens(ctx context.Context, req *jwt_http2.RefreshTokens
 		return nil, err
 	}
 
-	return &jwt_http2.RefreshTokenResponse{
+	return &jwt_gRPC.RefreshTokenResponse{
 		AccessToken:  newTokens.AccessToken,
 		RefreshToken: newTokens.RefreshToken,
 	}, nil
 }
 
-func (s *Server) GetUserId(ctx context.Context, req *jwt_http2.GetUserIdRequest) (*jwt_http2.GetUserIdResponse, error) {
+func (s *Server) GetUserId(ctx context.Context, req *jwt_gRPC.GetUserIdRequest) (*jwt_gRPC.GetUserIdResponse, error) {
 	log := s.log.WithRequestInfo(ctx)
 	log.WithFields(logrus.Fields{
 		"req": req,
@@ -149,12 +149,12 @@ func (s *Server) GetUserId(ctx context.Context, req *jwt_http2.GetUserIdRequest)
 		return nil, err
 	}
 
-	return &jwt_http2.GetUserIdResponse{
+	return &jwt_gRPC.GetUserIdResponse{
 		UserId: userId,
 	}, nil
 }
 
-func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_http2.CheckTokenExistenceRequest) (*jwt_http2.CheckTokenExistenceResponse, error) {
+func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_gRPC.CheckTokenExistenceRequest) (*jwt_gRPC.CheckTokenExistenceResponse, error) {
 	log := s.log.WithRequestInfo(ctx)
 	log.WithFields(logrus.Fields{
 		"req": req,
@@ -165,7 +165,7 @@ func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_http2.CheckTo
 		return nil, fmt.Errorf(ERROR_ProvideAnyField)
 	}
 
-	response := new(jwt_http2.CheckTokenExistenceResponse)
+	response := new(jwt_gRPC.CheckTokenExistenceResponse)
 
 	if req.GetAccessToken() != "" {
 		claims, err := s.parseAccessToken(ctx, req.GetAccessToken())
@@ -204,7 +204,7 @@ func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_http2.CheckTo
 	return response, nil
 }
 
-func (s *Server) RevokeTokens(ctx context.Context, req *jwt_http2.RevokeTokensRequest) (*jwt_http2.RevokeTokensResponse, error) {
+func (s *Server) RevokeTokens(ctx context.Context, req *jwt_gRPC.RevokeTokensRequest) (*jwt_gRPC.RevokeTokensResponse, error) {
 	log := s.log.WithRequestInfo(ctx)
 	log.WithFields(logrus.Fields{
 		"req": req,
@@ -228,7 +228,7 @@ func (s *Server) RevokeTokens(ctx context.Context, req *jwt_http2.RevokeTokensRe
 		return nil, fmt.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
 	}
 
-	return &jwt_http2.RevokeTokensResponse{
+	return &jwt_gRPC.RevokeTokensResponse{
 		Revoked: true,
 	}, nil
 }
