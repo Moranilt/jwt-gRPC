@@ -38,9 +38,18 @@ message CheckTokenExistenceResponse {
   optional bool RefreshToken = 2;
 }
 
+message RevokeTokensRequest {
+  string RefreshToken = 1;
+}
+
+message RevokeTokensResponse {
+  bool Revoked = 1;
+}
+
 service Authentication {
   rpc CreateTokens(CreateTokensRequest) returns (CreateTokensResponse);
   rpc RefreshTokens(RefreshTokensRequest) returns (RefreshTokenResponse);
   rpc GetUserId(GetUserIdRequest) returns (GetUserIdResponse);
   rpc CheckTokenExistence(CheckTokenExistenceRequest) returns (CheckTokenExistenceResponse);
+  rpc RevokeTokens(RevokeTokensRequest) returns (RevokeTokensResponse);
 }
