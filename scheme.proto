@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "github.com/Moranilt/jwt-http2";
+option go_package = "github.com/Moranilt/jwt-gRPC";
 
 message CreateTokensRequest {
   string UserId = 1;
@@ -12,7 +12,7 @@ message CreateTokensResponse {
 }
 
 message RefreshTokensRequest {
-  string ResfreshToken = 1;
+  string RefreshToken = 1;
 }
 
 message RefreshTokenResponse {

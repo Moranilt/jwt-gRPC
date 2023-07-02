@@ -4,7 +4,7 @@
 // - protoc             v3.21.9
 // source: scheme.proto
 
-package jwt_http2
+package jwt_gRPC
 
 import (
 	context "context"

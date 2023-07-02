@@ -90,7 +90,7 @@ func (s *Server) RefreshTokens(ctx context.Context, req *jwt_http2.RefreshTokens
 		"req": req,
 	}).Info()
 
-	claims, err := s.parseRefreshToken(ctx, req.ResfreshToken)
+	claims, err := s.parseRefreshToken(ctx, req.RefreshToken)
 	if err != nil {
 		log.Error("parse refresh token: ", err)
 		return nil, err
@@ -139,7 +139,7 @@ func (s *Server) makeAccessToken(ctx context.Context, uuid string, uc UserClaims
 		},
 	}
 
-	key, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(s.privateCert))
+	key, err := jwt.ParseRSAPrivateKeyFromPEM(s.privateCert)
 	if err != nil {
 		return "", err
 	}
