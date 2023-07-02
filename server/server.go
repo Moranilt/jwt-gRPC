@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	ERROR_StoreTokenToRedis = "cannot store token to redis: %v"
-	ERROR_MakeAccessToken   = "make access token: "
-	ERROR_MakeRefreshToken  = "make refresh token: "
+	ERROR_StoreTokenToRedis    = "cannot store token to redis: %v"
+	ERROR_MakeAccessToken      = "make access token: %v"
+	ERROR_MakeRefreshToken     = "make refresh token: %v"
+	ERROR_RefreshTokenNotFound = "refresh token not found"
 )
 
 type Server struct {
@@ -66,45 +67,60 @@ func New(
 }
 
 func (s *Server) CreateTokens(ctx context.Context, req *jwt_http2.CreateTokensRequest) (*jwt_http2.CreateTokensResponse, error) {
-	now := time.Now()
 	log := s.log.WithRequestInfo(ctx)
 	log.WithFields(logrus.Fields{
 		"req": req,
 	}).Info()
 
-	accessUUID := uuid.NewString()
-	accessExp := now.Add(s.config.TTL.Access)
-
-	refreshUUID := uuid.NewString()
-	refreshExp := now.Add(s.config.TTL.Refresh)
-
-	access_token, err := s.makeAccessToken(ctx, accessUUID, req.UserClaims, accessExp)
+	tokens, err := s.makeNewTokens(ctx, req.UserId, req.UserClaims)
 	if err != nil {
-		log.Error(ERROR_MakeAccessToken, err)
+		log.Error(err)
 		return nil, err
-	}
-
-	refresh_token, err := s.makeRefreshToken(ctx, accessUUID, refreshUUID, req.UserClaims, refreshExp)
-	if err != nil {
-		log.Error(ERROR_MakeRefreshToken, err)
-		return nil, err
-	}
-
-	err = s.redis.Set(ctx, accessUUID, req.UserId, time.Until(accessExp)).Err()
-	if err != nil {
-		log.Errorf(ERROR_StoreTokenToRedis, err)
-		return nil, fmt.Errorf(ERROR_StoreTokenToRedis, err)
-	}
-
-	err = s.redis.Set(ctx, refreshUUID, req.UserId, time.Until(refreshExp)).Err()
-	if err != nil {
-		log.Errorf(ERROR_StoreTokenToRedis, err)
-		return nil, fmt.Errorf(ERROR_StoreTokenToRedis, err)
 	}
 
 	return &jwt_http2.CreateTokensResponse{
-		AccessToken:  access_token,
-		RefreshToken: refresh_token,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+	}, nil
+}
+
+func (s *Server) RefreshTokens(ctx context.Context, req *jwt_http2.RefreshTokensRequest) (*jwt_http2.RefreshTokenResponse, error) {
+	log := s.log.WithRequestInfo(ctx)
+	log.WithFields(logrus.Fields{
+		"req": req,
+	}).Info()
+
+	claims, err := s.parseRefreshToken(ctx, req.ResfreshToken)
+	if err != nil {
+		log.Error("parse refresh token: ", err)
+		return nil, err
+	}
+
+	userId, err := s.redis.Get(ctx, claims.RefreshUUID).Result()
+	if err != nil {
+		if err == redis.Nil {
+			log.Error(ERROR_RefreshTokenNotFound)
+			return nil, errors.New(ERROR_RefreshTokenNotFound)
+		}
+		log.Error("redis: ", err)
+		return nil, err
+	}
+
+	err = s.redis.Del(ctx, claims.RefreshUUID, claims.AccessUUID).Err()
+	if err != nil {
+		log.Error("redis: ", err)
+		return nil, err
+	}
+
+	newTokens, err := s.makeNewTokens(ctx, userId, claims.UserClaims)
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+
+	return &jwt_http2.RefreshTokenResponse{
+		AccessToken:  newTokens.AccessToken,
+		RefreshToken: newTokens.RefreshToken,
 	}, nil
 }
 
@@ -212,4 +228,38 @@ func (s *Server) parseAccessToken(ctx context.Context, refreshToken string) (*Ac
 	} else {
 		return nil, errors.New("not valid token claims")
 	}
+}
+
+func (s *Server) makeNewTokens(ctx context.Context, userId string, userClaims UserClaims) (*AuthTokens, error) {
+	now := time.Now()
+	accessUUID := uuid.NewString()
+	accessExp := now.Add(s.config.TTL.Access)
+
+	refreshUUID := uuid.NewString()
+	refreshExp := now.Add(s.config.TTL.Refresh)
+
+	access_token, err := s.makeAccessToken(ctx, accessUUID, userClaims, accessExp)
+	if err != nil {
+		return nil, fmt.Errorf(ERROR_MakeAccessToken, err)
+	}
+
+	refresh_token, err := s.makeRefreshToken(ctx, accessUUID, refreshUUID, userClaims, refreshExp)
+	if err != nil {
+		return nil, fmt.Errorf(ERROR_MakeRefreshToken, err)
+	}
+
+	err = s.redis.Set(ctx, accessUUID, userId, time.Until(accessExp)).Err()
+	if err != nil {
+		return nil, fmt.Errorf(ERROR_StoreTokenToRedis, err)
+	}
+
+	err = s.redis.Set(ctx, refreshUUID, userId, time.Until(refreshExp)).Err()
+	if err != nil {
+		return nil, fmt.Errorf(ERROR_StoreTokenToRedis, err)
+	}
+
+	return &AuthTokens{
+		AccessToken:  access_token,
+		RefreshToken: refresh_token,
+	}, nil
 }

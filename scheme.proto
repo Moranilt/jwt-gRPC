@@ -11,6 +11,16 @@ message CreateTokensResponse {
   string RefreshToken = 2;
 }
 
+message RefreshTokensRequest {
+  string ResfreshToken = 1;
+}
+
+message RefreshTokenResponse {
+  string AccessToken = 1;
+  string RefreshToken = 2;
+}
+
 service Authentication {
   rpc CreateTokens(CreateTokensRequest) returns (CreateTokensResponse);
+  rpc RefreshTokens(RefreshTokensRequest) returns (RefreshTokenResponse);
 }

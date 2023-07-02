@@ -22,3 +22,8 @@ ENV = PORT_GRPC=$(PORT_GRPC) PORT_REST=$(PORT_REST) PRODUCTION=$(PRODUCTION) CON
 
 run:
 	$(ENV) go run .
+
+proto:
+	protoc --go_out=./auth --go_opt=paths=source_relative \
+    --go-grpc_out=./auth --go-grpc_opt=paths=source_relative \
+    scheme.proto
