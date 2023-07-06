@@ -13,9 +13,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel"
 )
 
 const (
+	TRACE_NAME = "server"
+
 	ERROR_StoreTokenToRedis          = "cannot store token to redis: %v"
 	ERROR_MakeAccessToken            = "make access token: %v"
 	ERROR_MakeRefreshToken           = "make refresh token: %v"
@@ -70,12 +73,15 @@ func New(
 }
 
 func (s *Server) CreateTokens(ctx context.Context, req *jwt_gRPC.CreateTokensRequest) (*jwt_gRPC.CreateTokensResponse, error) {
-	log := s.log.WithRequestInfo(ctx)
+	newCtx, span := otel.Tracer(TRACE_NAME).Start(ctx, "CreateTokens")
+	defer span.End()
+
+	log := s.log.WithRequestInfo(newCtx)
 	log.WithFields(logrus.Fields{
 		"req": req,
 	}).Info()
 
-	tokens, err := s.makeNewTokens(ctx, req.UserId, req.UserClaims)
+	tokens, err := s.makeNewTokens(newCtx, req.UserId, req.UserClaims)
 	if err != nil {
 		log.Error(err)
 		return nil, err
@@ -88,18 +94,21 @@ func (s *Server) CreateTokens(ctx context.Context, req *jwt_gRPC.CreateTokensReq
 }
 
 func (s *Server) RefreshTokens(ctx context.Context, req *jwt_gRPC.RefreshTokensRequest) (*jwt_gRPC.RefreshTokenResponse, error) {
-	log := s.log.WithRequestInfo(ctx)
+	newCtx, span := otel.Tracer(TRACE_NAME).Start(ctx, "RefreshTokens")
+	defer span.End()
+
+	log := s.log.WithRequestInfo(newCtx)
 	log.WithFields(logrus.Fields{
 		"req": req,
 	}).Info()
 
-	claims, err := s.parseRefreshToken(ctx, req.RefreshToken)
+	claims, err := s.parseRefreshToken(newCtx, req.RefreshToken)
 	if err != nil {
 		log.Error("parse refresh token: ", err)
 		return nil, err
 	}
 
-	userId, err := s.redis.Get(ctx, claims.RefreshUUID).Result()
+	userId, err := s.redis.Get(newCtx, claims.RefreshUUID).Result()
 	if err != nil {
 		if err == redis.Nil {
 			log.Error(ERROR_RefreshTokenNotFound)
@@ -109,13 +118,13 @@ func (s *Server) RefreshTokens(ctx context.Context, req *jwt_gRPC.RefreshTokensR
 		return nil, err
 	}
 
-	err = s.redis.Del(ctx, claims.RefreshUUID, claims.AccessUUID).Err()
+	err = s.redis.Del(newCtx, claims.RefreshUUID, claims.AccessUUID).Err()
 	if err != nil {
 		log.Error("redis: ", err)
 		return nil, err
 	}
 
-	newTokens, err := s.makeNewTokens(ctx, userId, claims.UserClaims)
+	newTokens, err := s.makeNewTokens(newCtx, userId, claims.UserClaims)
 	if err != nil {
 		log.Error(err)
 		return nil, err
@@ -128,18 +137,21 @@ func (s *Server) RefreshTokens(ctx context.Context, req *jwt_gRPC.RefreshTokensR
 }
 
 func (s *Server) GetUserId(ctx context.Context, req *jwt_gRPC.GetUserIdRequest) (*jwt_gRPC.GetUserIdResponse, error) {
-	log := s.log.WithRequestInfo(ctx)
+	newCtx, span := otel.Tracer(TRACE_NAME).Start(ctx, "GetUserId")
+	defer span.End()
+
+	log := s.log.WithRequestInfo(newCtx)
 	log.WithFields(logrus.Fields{
 		"req": req,
 	}).Info()
 
-	claims, err := s.parseAccessToken(ctx, req.AccessToken)
+	claims, err := s.parseAccessToken(newCtx, req.AccessToken)
 	if err != nil {
 		log.Error(err)
 		return nil, err
 	}
 
-	userId, err := s.redis.Get(ctx, claims.UUID).Result()
+	userId, err := s.redis.Get(newCtx, claims.UUID).Result()
 	if err != nil {
 		if err == redis.Nil {
 			log.Error(ERROR_TokenNotFound)
@@ -155,7 +167,10 @@ func (s *Server) GetUserId(ctx context.Context, req *jwt_gRPC.GetUserIdRequest) 
 }
 
 func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_gRPC.CheckTokenExistenceRequest) (*jwt_gRPC.CheckTokenExistenceResponse, error) {
-	log := s.log.WithRequestInfo(ctx)
+	newCtx, span := otel.Tracer(TRACE_NAME).Start(ctx, "CheckTokenExistence")
+	defer span.End()
+
+	log := s.log.WithRequestInfo(newCtx)
 	log.WithFields(logrus.Fields{
 		"req": req,
 	}).Info()
@@ -168,13 +183,13 @@ func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_gRPC.CheckTok
 	response := new(jwt_gRPC.CheckTokenExistenceResponse)
 
 	if req.GetAccessToken() != "" {
-		claims, err := s.parseAccessToken(ctx, req.GetAccessToken())
+		claims, err := s.parseAccessToken(newCtx, req.GetAccessToken())
 		if err != nil {
 			log.Error(err)
 			return nil, err
 		}
 
-		result, err := s.redis.Exists(ctx, claims.UUID).Result()
+		result, err := s.redis.Exists(newCtx, claims.UUID).Result()
 		if err != nil {
 			log.Error(err)
 			return nil, err
@@ -185,13 +200,13 @@ func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_gRPC.CheckTok
 	}
 
 	if req.GetRefreshToken() != "" {
-		claims, err := s.parseRefreshToken(ctx, req.GetRefreshToken())
+		claims, err := s.parseRefreshToken(newCtx, req.GetRefreshToken())
 		if err != nil {
 			log.Error(err)
 			return nil, err
 		}
 
-		result, err := s.redis.Exists(ctx, claims.RefreshUUID).Result()
+		result, err := s.redis.Exists(newCtx, claims.RefreshUUID).Result()
 		if err != nil {
 			log.Error(err)
 			return nil, err
@@ -205,24 +220,27 @@ func (s *Server) CheckTokenExistence(ctx context.Context, req *jwt_gRPC.CheckTok
 }
 
 func (s *Server) RevokeTokens(ctx context.Context, req *jwt_gRPC.RevokeTokensRequest) (*jwt_gRPC.RevokeTokensResponse, error) {
-	log := s.log.WithRequestInfo(ctx)
+	newCtx, span := otel.Tracer(TRACE_NAME).Start(ctx, "CheckTokenExistence")
+	defer span.End()
+
+	log := s.log.WithRequestInfo(newCtx)
 	log.WithFields(logrus.Fields{
 		"req": req,
 	}).Info()
 
-	claims, err := s.parseRefreshToken(ctx, req.RefreshToken)
+	claims, err := s.parseRefreshToken(newCtx, req.RefreshToken)
 	if err != nil {
 		log.Error(err)
 		return nil, err
 	}
 
-	err = s.redis.Del(ctx, claims.RefreshUUID).Err()
+	err = s.redis.Del(newCtx, claims.RefreshUUID).Err()
 	if err != nil {
 		log.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
 		return nil, fmt.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
 	}
 
-	err = s.redis.Del(ctx, claims.AccessUUID).Err()
+	err = s.redis.Del(newCtx, claims.AccessUUID).Err()
 	if err != nil {
 		log.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
 		return nil, fmt.Errorf(ERROR_CannotDeleteTokenFromRedis, err)
@@ -234,6 +252,9 @@ func (s *Server) RevokeTokens(ctx context.Context, req *jwt_gRPC.RevokeTokensReq
 }
 
 func (s *Server) makeAccessToken(ctx context.Context, uuid string, uc UserClaims, exp time.Time) (string, error) {
+	_, span := otel.Tracer(TRACE_NAME).Start(ctx, "makeAccessToken")
+	defer span.End()
+
 	claims := AccessClaims{
 		UUID:       uuid,
 		UserClaims: uc,
@@ -262,6 +283,9 @@ func (s *Server) makeAccessToken(ctx context.Context, uuid string, uc UserClaims
 }
 
 func (s *Server) makeRefreshToken(ctx context.Context, accessUUID string, refreshUUID string, uc UserClaims, refreshExp time.Time) (string, error) {
+	_, span := otel.Tracer(TRACE_NAME).Start(ctx, "makeRefreshToken")
+	defer span.End()
+
 	claims := RefreshClaims{
 		AccessUUID:  accessUUID,
 		RefreshUUID: refreshUUID,
@@ -300,6 +324,9 @@ func (s *Server) makeJwtOptions(options ...jwt.ParserOption) []jwt.ParserOption 
 }
 
 func (s *Server) parseRefreshToken(ctx context.Context, refreshToken string) (*RefreshClaims, error) {
+	_, span := otel.Tracer(TRACE_NAME).Start(ctx, "parseRefreshToken")
+	defer span.End()
+
 	token, err := jwt.ParseWithClaims(refreshToken, &RefreshClaims{}, func(t *jwt.Token) (any, error) {
 		key, err := jwt.ParseRSAPublicKeyFromPEM(s.publicCert)
 		if err != nil {
@@ -320,6 +347,9 @@ func (s *Server) parseRefreshToken(ctx context.Context, refreshToken string) (*R
 }
 
 func (s *Server) parseAccessToken(ctx context.Context, refreshToken string) (*AccessClaims, error) {
+	_, span := otel.Tracer(TRACE_NAME).Start(ctx, "parseAccessToken")
+	defer span.End()
+
 	token, err := jwt.ParseWithClaims(refreshToken, &AccessClaims{}, func(t *jwt.Token) (any, error) {
 		key, err := jwt.ParseRSAPublicKeyFromPEM(s.publicCert)
 		if err != nil {
@@ -340,6 +370,9 @@ func (s *Server) parseAccessToken(ctx context.Context, refreshToken string) (*Ac
 }
 
 func (s *Server) makeNewTokens(ctx context.Context, userId string, userClaims UserClaims) (*AuthTokens, error) {
+	newCtx, span := otel.Tracer(TRACE_NAME).Start(ctx, "makeNewTokens")
+	defer span.End()
+
 	now := time.Now()
 	accessUUID := uuid.NewString()
 	accessExp := now.Add(s.config.TTL.Access)
@@ -347,22 +380,22 @@ func (s *Server) makeNewTokens(ctx context.Context, userId string, userClaims Us
 	refreshUUID := uuid.NewString()
 	refreshExp := now.Add(s.config.TTL.Refresh)
 
-	access_token, err := s.makeAccessToken(ctx, accessUUID, userClaims, accessExp)
+	access_token, err := s.makeAccessToken(newCtx, accessUUID, userClaims, accessExp)
 	if err != nil {
 		return nil, fmt.Errorf(ERROR_MakeAccessToken, err)
 	}
 
-	refresh_token, err := s.makeRefreshToken(ctx, accessUUID, refreshUUID, userClaims, refreshExp)
+	refresh_token, err := s.makeRefreshToken(newCtx, accessUUID, refreshUUID, userClaims, refreshExp)
 	if err != nil {
 		return nil, fmt.Errorf(ERROR_MakeRefreshToken, err)
 	}
 
-	err = s.redis.Set(ctx, accessUUID, userId, time.Until(accessExp)).Err()
+	err = s.redis.Set(newCtx, accessUUID, userId, time.Until(accessExp)).Err()
 	if err != nil {
 		return nil, fmt.Errorf(ERROR_StoreTokenToRedis, err)
 	}
 
-	err = s.redis.Set(ctx, refreshUUID, userId, time.Until(refreshExp)).Err()
+	err = s.redis.Set(newCtx, refreshUUID, userId, time.Until(refreshExp)).Err()
 	if err != nil {
 		return nil, fmt.Errorf(ERROR_StoreTokenToRedis, err)
 	}
