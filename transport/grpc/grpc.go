@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	jwt_gRPC "github.com/Moranilt/jwt-http2/auth"
+	"github.com/Moranilt/jwt-http2/jwt_gRPC"
 	"github.com/Moranilt/jwt-http2/middleware"
 	service "github.com/Moranilt/jwt-http2/server"
 	"google.golang.org/grpc"

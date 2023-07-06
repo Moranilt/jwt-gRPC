@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	jwt_gRPC "github.com/Moranilt/jwt-http2/auth"
 	"github.com/Moranilt/jwt-http2/config"
+	"github.com/Moranilt/jwt-http2/jwt_gRPC"
 	"github.com/Moranilt/jwt-http2/logger"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
