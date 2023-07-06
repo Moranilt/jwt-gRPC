@@ -13,6 +13,7 @@ import (
 	"github.com/Moranilt/jwt-http2/logger"
 	"github.com/Moranilt/jwt-http2/middleware"
 	"github.com/Moranilt/jwt-http2/server"
+	"github.com/Moranilt/jwt-http2/tracer"
 	grpc_transport "github.com/Moranilt/jwt-http2/transport/grpc"
 	http_transport "github.com/Moranilt/jwt-http2/transport/http"
 	"golang.org/x/sync/errgroup"
@@ -33,6 +34,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("error while reading env: %v", err)
 	}
+
+	tp, err := tracer.NewProvider(env.Jaeger.URL, env.Jaeger.Name)
+	if err != nil {
+		log.Fatal("jaeger: ", err)
+	}
+
+	defer func(ctx context.Context) {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Printf("shutting down tracer provider: %v", err)
+		}
+	}(ctx)
 
 	vaultClient, err := clients.Vault(env.Vault)
 	if err != nil {
